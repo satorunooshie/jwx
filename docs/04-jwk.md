@@ -367,7 +367,7 @@ type Container struct {
 // type is unknown at compile time. In this example we use
 // a proxy/wrapper to trick `Container` from attempting to
 // parse the `.Key` field, and intercept the value that
-// would have gone into the the `Container` struct into
+// would have gone into the `Container` struct into
 // `Proxy` struct's `.Key` struct field
 type Proxy struct {
   Container
@@ -655,8 +655,7 @@ MAIN:
       return
     }
     _ = keyset
-    // The returned `keyset` will always be "reasonably" new. It is important that
-    // you always call `ar.Fetch()` before using the `keyset` as this is where the refreshing occurs.
+    // The returned `keyset` will always be "reasonably" new.
     //
     // By "reasonably" we mean that we cannot guarantee that the keys will be refreshed
     // immediately after it has been rotated in the remote source. But it should be close\
@@ -786,7 +785,7 @@ func ExampleJWK_Whitelist() {
       Whitelist: jwk.NewRegexpWhitelist().Add(regexp.MustCompile(`^https://www\.googleapis\.com/`)),
       Error:     true,
     },
-    // Thist whitelist allows anything
+    // This whitelist allows anything
     {
       Whitelist: jwk.InsecureWhitelist{},
     },
@@ -864,7 +863,7 @@ func ExampleJWK_KeySpecificMethods() {
   // We won't print these values, because each time they are
   // generated the contents will be different, and thus our
   // tests would fail. But here you can see that once you
-  // onvert the type you can access the RSA-specific methods
+  // convert the type you can access the RSA-specific methods
   _ = rsakey.D()
   _ = rsakey.DP()
   _ = rsakey.DQ()

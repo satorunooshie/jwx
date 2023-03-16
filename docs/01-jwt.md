@@ -26,6 +26,7 @@ In this document we describe how to work with JWT using `github.com/lestrrat-go/
   * [Serialize using JWE and JWS](#serialize-using-jwe-and-jws)
   * [Serialize the `aud` field as a string](#serialize-aud-field-as-a-string)
 * [Working with JWT](#working-with-jwt)
+  * [Access JWS headers](#access-jws-headers)
   * [Get/Set fields](#getset-fields)
 
 ---
@@ -686,7 +687,7 @@ func ExampleJWT_Validate() {
   }
 
   {
-    // Case 2: USing jwt.Parse()
+    // Case 2: Using jwt.Parse()
     buf, err := json.Marshal(tok)
     if err != nil {
       fmt.Printf("failed to serialize token: %s\n", err)
@@ -829,7 +830,7 @@ func ExampleJWT_ValidateDetectErrorType() {
   }
 
   {
-    // Case 1: Parsing error. We're not showing verification faiure
+    // Case 1: Parsing error. We're not showing verification failure
     // but it is about the same in the context of wanting to know
     // if it's a validation error or not
     _, err := jwt.Parse(buf[:len(buf)-1], jwt.WithVerify(false), jwt.WithValidate(true))
@@ -967,8 +968,8 @@ func ExampleJWT_SerializeJWS() {
   }
 
   // OUTPUT:
-  // eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjIzMzQzMTIwMCwiaXNzIjoiZ2l0aHViLmNvbS9sZXN0cnJhdC1nby9qd3gifQ.rTlpyVnHFWosNud7seqlsvhM8UoXUIAKfdWHySFO5Ro
-  // eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjIzMzQzMTIwMCwiaXNzIjoiZ2l0aHViLmNvbS9sZXN0cnJhdC1nby9qd3gifQ.rTlpyVnHFWosNud7seqlsvhM8UoXUIAKfdWHySFO5Ro
+  // eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjIzMzQzMTIwMCwiaXNzIjoiZ2l0aHViLmNvbS9sZXN0cnJhdC1nby9qd3gifQ.K1WVWaM6Dww9aNNFMjnyUfjaaHIs08-3Qb1b8eSEHOk
+  // eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjIzMzQzMTIwMCwiaXNzIjoiZ2l0aHViLmNvbS9sZXN0cnJhdC1nby9qd3gifQ.K1WVWaM6Dww9aNNFMjnyUfjaaHIs08-3Qb1b8eSEHOk
 }
 ```
 source: [examples/jwt_serialize_jws_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jwt_serialize_jws_example_test.go)
@@ -1062,7 +1063,7 @@ The examples below shoud both be valid, but apparently there are systems that do
 }
 ```
 
-To workaround these problematic parsers, you may use the `jwt.Settings()` function with the `jwt.WithFlattenAudience(true)` option. The following example shows you how to force all calls to marshal JWT tokens to flatten the `aud` field when it can. This has **global effect**.
+To workaround these problematic parsers, you may use enable the option `jwt.FlattenAudience` on each token that you would like to see this behavior. If you do this for _all_ (or most) tokens, you may opt to change the global default value by settings `jwt.WithFlattenAudience(true)` option via `jwt.Settings()`. 
 
 <!-- INCLUDE(examples/jwt_flatten_audience_example_test.go) -->
 ```go
@@ -1077,34 +1078,95 @@ import (
 )
 
 func ExampleJWT_FlattenAudience() {
-  // This bit has been commented out because it would have
-  // global effect in all of the examples. Create a init()
-  // function with the following code if you are using it
-  // in producion
+  // Sometimes you need to "flatten" the "aud" claim because of
+  // parsers developed by people who apparently didn't read the RFC.
   //
-  // jwt.Settings(jwt.WithFlattenAudience(true))
+  // In such cases, you can control the behavior of the JSON
+  // emitted when tokens are converted to JSON by tweaking the
+  // per-token options set.
 
-  tok, err := jwt.NewBuilder().
-    Audience([]string{`foo`}).
-    Build()
-  if err != nil {
-    fmt.Printf("failed to build token: %s\n", err)
-    return
+  { // Case 1: the per-object way
+    tok, err := jwt.NewBuilder().
+      Audience([]string{`foo`}).
+      Build()
+    if err != nil {
+      fmt.Printf("failed to build token: %s\n", err)
+      return
+    }
+
+    // Only this particular instance of the token is affected
+    tok.Options().Enable(jwt.FlattenAudience)
+    json.NewEncoder(os.Stdout).Encode(tok)
   }
 
-  json.NewEncoder(os.Stdout).Encode(tok)
+  { // Case 2: globally enabling flattened audience
+    // NOTE: This example DOES NOT flatten the audience
+    // because the call to change this global settings has been
+    // commented out. Setting this has GLOBAL effects, and would
+    // alter the output of other examples.
+    //
+    // If you would like to try this, UNCOMMENT the line below
+    //
+    // // UNCOMMENT THIS LINE BELOW
+    // jwt.Settings(jwt.WithFlattenAudience(true))
+    //
+    // ...and if you are running from the examples directory, run
+    // this example in isolation by invoking
+    //
+    //   go test -run=ExampleJWT_FlattenAudience
+    //
+    // You may see the example fail, but that's because the OUTPUT line
+    // expects the global settings to be DISABLED. In order to make
+    // the example pass, change the second line from OUTPUT below
+    //
+    //   from: {"aud":["foo"]}
+    //   to  : {"aud":"foo"}
+    //
+    // Please note that it is recommended you ONLY set the jwt.Settings(jwt.WithFlattenedAudience(true))
+    // once at the beginning of your main program (probably in an `init()` function)
+    // so that you do not need to worry about causing issues depending
+    // on when tokens are created relative to the time when
+    // the global setting is changed.
 
-  // If the flattened audience is enabled, the following shoud
-  // result in an error, and produce `{"aud":"foo"}`
+    tok, err := jwt.NewBuilder().
+      Audience([]string{`foo`}).
+      Build()
+    if err != nil {
+      fmt.Printf("failed to build token: %s\n", err)
+      return
+    }
 
+    // This would flatten the "aud" claim if the appropriate
+    // line above has been uncommented
+    json.NewEncoder(os.Stdout).Encode(tok)
+
+    // This would force this particular object not to flatten the
+    // "aud" claim. All other tokens would be constructed with the
+    // option enabled
+    tok.Options().Enable(jwt.FlattenAudience)
+    json.NewEncoder(os.Stdout).Encode(tok)
+  }
   // OUTPUT:
+  // {"aud":"foo"}
   // {"aud":["foo"]}
+  // {"aud":"foo"}
 }
 ```
 source: [examples/jwt_flatten_audience_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jwt_flatten_audience_example_test.go)
 <!-- END INCLUDE -->
 
 # Working with JWT
+
+## Access JWS headers
+
+The RFC defines JWS as an envelope to JWT (JWS can carry any payload, you just happened to assign a JWT to it). A JWT is just a bag of arbitrary key/value pairs, where some of them are predefined for validation. This means that JWS headers are NOT part of a JWT -- and thus you will not be able to access them through the `jwt.Token` itself.
+
+If you need to access these JWS headers while parsing JWS signed JWT, you will need to reach into the tools defined in the `jws` package.
+
+* If you are considering using JWS header fields to decide on which key to use for verification, consider [using a `jwt.KeyProvider`](#parse-and-verify-a-jwt-using-arbitrary-keys).
+* If you are looking for ways to 
+
+Please [look at the JWS documentation for it](./02-jws.md#parse-a-jws-message-and-access-jws-headers) .
 
 ## Get/Set fields
 

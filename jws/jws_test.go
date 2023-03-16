@@ -28,6 +28,7 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/lestrrat-go/jwx/v2/x25519"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1067,7 +1068,6 @@ func TestReadFile(t *testing.T) {
 }
 
 func TestVerifyNonUniqueKid(t *testing.T) {
-	t.Parallel()
 	const payload = "Lorem ipsum"
 	const kid = "notUniqueKid"
 	privateKey, err := jwxtest.GenerateRsaJwk()
@@ -1136,19 +1136,19 @@ func TestVerifyNonUniqueKid(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		t.Run(tc.Name, func(t *testing.T) {
-			t.Parallel()
-			wrongKey := tc.Key()
-			// Try matching in different orders
-			for _, set := range []jwk.Set{makeSet(wrongKey, correctKey), makeSet(correctKey, wrongKey)} {
+		tc := tc
+		wrongKey, err := tc.Key().Clone()
+		require.NoError(t, err, `cloning wrong key should succeed`)
+		for _, set := range []jwk.Set{makeSet(wrongKey, correctKey), makeSet(correctKey, wrongKey)} {
+			set := set
+			t.Run(tc.Name, func(t *testing.T) {
+				// Try matching in different orders
 				var usedKey jwk.Key
 				_, err = jws.Verify(signed, jws.WithKeySet(set, jws.WithMultipleKeysPerKeyID(true)), jws.WithKeyUsed(&usedKey))
-				if !assert.NoError(t, err, `jws.Verify should succeed`) {
-					return
-				}
+				require.NoError(t, err, `jws.Verify should succeed`)
 				require.Equal(t, usedKey, correctKey)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -1919,4 +1919,35 @@ func TestGH681(t *testing.T) {
 	if !assert.NoError(t, err, "failed to verify JWS message") {
 		return
 	}
+}
+
+func TestGH840(t *testing.T) {
+	// Go 1.19+ panics if elliptic curve operations are called against
+	// a point that's _NOT_ on the curve
+	untrustedJWK := []byte(`{
+		"kty": "EC",
+		"crv": "P-256",
+		"x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqx7D4",
+		"y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM",
+		"d": "870MB6gfuTJ4HtUnUvYMyJpr5eUZNP4Bk43bVdj3eAE"
+	}`)
+
+	// Parse, serialize, slice and dice JWKs!
+	privkey, err := jwk.ParseKey(untrustedJWK)
+	require.NoError(t, err, `jwk.ParseKey should succeed`)
+
+	pubkey, err := jwk.PublicKeyOf(privkey)
+	require.NoError(t, err, `jwk.PublicKeyOf should succeed`)
+
+	tok, err := jwt.NewBuilder().
+		Issuer(`github.com/lestrrat-go/jwx`).
+		IssuedAt(time.Now()).
+		Build()
+	require.NoError(t, err, `jwt.NewBuilder should succeed`)
+
+	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.ES256, privkey))
+	require.NoError(t, err, `jwt.Sign should succeed`)
+
+	_, err = jwt.Parse(signed, jwt.WithKey(jwa.ES256, pubkey))
+	require.Error(t, err, `jwt.Parse should FAIL`) // pubkey's X/Y is not on the curve
 }

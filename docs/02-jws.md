@@ -5,6 +5,7 @@ In this document we describe how to work with JWS using [`github.com/lestrrat-go
 * [Parsing](#parsing)
   * [Parse a JWS message stored in memory](#parse-a-jws-message-stored-in-memory)
   * [Parse a JWS message stored in a file](#parse-a-jws-message-stored-in-a-file)
+  * [Parse a JWS message and access JWS headers](#parse-a-jws-message-and-access-jws-headers)
 * [Signing](#signing)
   * [Generating a JWS message in compact serialization format](#generating-a-jws-message-in-compact-serialization-format)
   * [Generating a JWS message in JSON serialization format](#generating-a-jws-message-in-json-serialization-format)
@@ -106,6 +107,66 @@ func ExampleJWS_ReadFile() {
 source: [examples/jws_readfile_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jws_readfile_example_test.go)
 <!-- END INCLUDE -->
 
+## Parse a JWS message and access JWS headers
+
+Note: If you are considering using JWS header fields to decide on which key to use for verification, consider [using a `jwt.KeyProvider`](./01-jwt.md#parse-and-verify-a-jwt-using-arbitrary-keys).
+
+While a lot of documentation in the wild treat as if a JWT message encoded in base64 is... a JWT message, in truth it is a JWT message enveloped in a JWS message. Therefore in order to access the JWS headers of a JWT message you will need to work witha `jws.Message` object, which you can obtain from parsing the JWS payload. You will need to understand [the structure of a generic JWS message](https://www.rfc-editor.org/rfc/rfc7515#section-7.2.1).
+
+Below sample code extracts the `kid` field of a single-signature JWS message:
+
+<!-- INCLUDE(examples/jws_use_jws_header_test.go) -->
+```go
+package examples_test
+
+import (
+  "fmt"
+
+  "github.com/lestrrat-go/jwx/v2/jwa"
+  "github.com/lestrrat-go/jwx/v2/jwk"
+  "github.com/lestrrat-go/jwx/v2/jws"
+  "github.com/lestrrat-go/jwx/v2/jwt"
+)
+
+func ExampleJWS_UseJWSHeader() {
+  key, err := jwk.FromRaw([]byte(`abracadabra`))
+  if err != nil {
+    fmt.Printf(`failed to create new symmetric key: %s`, err)
+    return
+  }
+  key.Set(jws.KeyIDKey, `secret-key`)
+
+  tok, err := jwt.NewBuilder().
+    Issuer(`github.com/lestrrat-go/jwx`).
+    Build()
+  if err != nil {
+    fmt.Printf(`failed to build token: %s`, err)
+    return
+  }
+
+  signed, err := jwt.Sign(tok, jwt.WithKey(jwa.HS256, key))
+  if err != nil {
+    fmt.Printf(`failed to sign token: %s`, err)
+    return
+  }
+
+  msg, err := jws.Parse(signed)
+  if err != nil {
+    fmt.Printf(`failed to parse serialized JWT: %s`, err)
+    return
+  }
+
+  // While JWT enveloped with JWS in compact format only has 1 signature,
+  // a generic JWS message may have multiple signatures. Therefore we
+  // need to access the first element
+  fmt.Printf("%q\n", msg.Signatures()[0].ProtectedHeaders().KeyID())
+  // OUTPUT:
+  // "secret-key"
+}
+```
+source: [examples/jws_use_jws_header_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jws_use_jws_header_test.go)
+<!-- END INCLUDE -->
+
 # Signing
 
 ## Generating a JWS message in compact serialization format
@@ -141,7 +202,7 @@ func ExampleJWS_Sign() {
   }
   fmt.Printf("%s\n", buf)
   // OUTPUT:
-  // eyJhbGciOiJIUzI1NiJ9.TG9yZW0gaXBzdW0.idbECxA8ZhQbU0ddZmzdRZxQmHjwvw77lT2bwqGgNMo
+  // eyJhbGciOiJIUzI1NiJ9.TG9yZW0gaXBzdW0.EjVtju0uXjSz6QevNgAqN1ESd9aNCP7-tJLifkQ0_C0
 }
 ```
 source: [examples/jws_sign_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jws_sign_example_test.go)
@@ -189,7 +250,7 @@ func ExampleJWS_SignJSON() {
   }
   fmt.Printf("%s\n", buf)
   // OUTPUT:
-  // {"payload":"TG9yZW0gaXBzdW0","signatures":[{"protected":"eyJhbGciOiJIUzI1NiJ9","signature":"uKad3F0NclLDZBXhuq4fDpVqQwwFLGI3opL_xMNyUTA"},{"protected":"eyJhbGciOiJIUzI1NiJ9","signature":"ghg_AA3UTfVXztTr2wRKBUcNsPE_4zYQvWoaXVVT19M"},{"protected":"eyJhbGciOiJIUzI1NiJ9","signature":"NrvTYIR4rGCG7CIn_YVtGDFvqE-ft9PqNOjIJmKlVog"}]}
+  // {"payload":"TG9yZW0gaXBzdW0","signatures":[{"protected":"eyJhbGciOiJIUzI1NiJ9","signature":"bCQtU2y4PEnG78dUN-tXea8YEwhBAzLX7ZEYlRVtX_g"},{"protected":"eyJhbGciOiJIUzI1NiJ9","signature":"0ovW79M_bbaRDBrBLaNKN7rgJeXaSRAnu5rhAuRXBR4"},{"protected":"eyJhbGciOiJIUzI1NiJ9","signature":"ZkUzwlK5E6LFKsYEIyUvskOKLMDxE0MvvkvNrwINNWE"}]}
 }
 ```
 source: [examples/jws_sign_json_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jws_sign_json_example_test.go)
@@ -229,7 +290,7 @@ func ExampleJWS_SignDetachedPayload() {
 
   fmt.Printf("%s\n", serialized)
   // OUTPUT:
-  // eyJhbGciOiJIUzI1NiJ9..eOOVjre9XHILxvHaJpH-ZCb1TiiiTZLOY0Jhr7mwDns
+  // eyJhbGciOiJIUzI1NiJ9..H14oXKwyvAsl0IbBLjw9tLxNIoYisuIyb_oDV4-30Vk
 }
 ```
 source: [examples/jws_sign_detached_payload_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jws_sign_detached_payload_example_test.go)
@@ -271,7 +332,7 @@ func ExampleJWS_SignWithHeaders() {
   }
   fmt.Printf("%s\n", buf)
   // OUTPUT:
-  // eyJhbGciOiJIUzI1NiIsIngtZXhhbXBsZSI6dHJ1ZX0.TG9yZW0gaXBzdW0.G1_mZLeYsCNCpglWcdofgoU9HExBGEMW08qzvouAzBo
+  // eyJhbGciOiJIUzI1NiIsIngtZXhhbXBsZSI6dHJ1ZX0.TG9yZW0gaXBzdW0.9nIX0hN7u1b97UcjmrVvd5y1ubkQp_1gz1V3Mkkcm14
 }
 ```
 source: [examples/jws_sign_with_headers_example_test.go](https://github.com/lestrrat-go/jwx/blob/v2/examples/jws_sign_with_headers_example_test.go)
@@ -306,7 +367,7 @@ import (
 )
 
 func ExampleJWS_VerifyWithKey() {
-  const src = `eyJhbGciOiJIUzI1NiJ9.TG9yZW0gaXBzdW0.idbECxA8ZhQbU0ddZmzdRZxQmHjwvw77lT2bwqGgNMo`
+  const src = `eyJhbGciOiJIUzI1NiJ9.TG9yZW0gaXBzdW0.EjVtju0uXjSz6QevNgAqN1ESd9aNCP7-tJLifkQ0_C0`
 
   key, err := jwk.FromRaw([]byte(`abracadabra`))
   if err != nil {
@@ -316,7 +377,7 @@ func ExampleJWS_VerifyWithKey() {
 
   buf, err := jws.Verify([]byte(src), jws.WithKey(jwa.HS256, key))
   if err != nil {
-    fmt.Printf("failed to sign payload: %s\n", err)
+    fmt.Printf("failed to verify payload: %s\n", err)
     return
   }
   fmt.Printf("%s\n", buf)
@@ -408,7 +469,7 @@ import (
 )
 
 func ExampleJWS_VerifyDetachedPayload() {
-  serialized := `eyJhbGciOiJIUzI1NiJ9..eOOVjre9XHILxvHaJpH-ZCb1TiiiTZLOY0Jhr7mwDns`
+  serialized := `eyJhbGciOiJIUzI1NiJ9..H14oXKwyvAsl0IbBLjw9tLxNIoYisuIyb_oDV4-30Vk`
   payload := `$.02`
 
   key, err := jwk.FromRaw([]byte(`abracadabra`))
@@ -419,7 +480,7 @@ func ExampleJWS_VerifyDetachedPayload() {
 
   verified, err := jws.Verify([]byte(serialized), jws.WithKey(jwa.HS256, key), jws.WithDetachedPayload([]byte(payload)))
   if err != nil {
-    fmt.Printf("failed to sign payload: %s\n", err)
+    fmt.Printf("failed to verify payload: %s\n", err)
     return
   }
 
